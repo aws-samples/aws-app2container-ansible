@@ -1,0 +1,65 @@
+---
+- name: Check if the app2Container is installed
+  shell: which app2container
+  register: app2ContainerResult
+  ignore_errors: true
+
+- name: Create the temp download directory for a2c installation
+  file:
+    path: "{{ download_a2c_dir }}"
+    state: directory
+    mode: '0755'
+  when:
+    - app2ContainerResult.rc != 0
+
+
+- name: Create the temp download directory for a2c installation on the localhost
+  file:
+    path: "{{ download_a2c_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+  when:
+    - app2ContainerResult.rc != 0 
+
+- name: Download the app2Container tar to localhost 
+  get_url:
+    url: "{{app2container_url}}"
+    dest: "{{download_a2c_dir}}/AWSApp2Container-installer-linux.tar.gz"
+  delegate_to: localhost     
+  run_once: true
+  when:
+    - app2ContainerResult.rc != 0
+
+- name: Copy intallation tar to targets 
+  copy:
+    src: "{{download_a2c_dir}}/AWSApp2Container-installer-linux.tar.gz"
+    dest: "{{download_a2c_dir}}"
+  when:   
+    - app2ContainerResult.rc != 0
+
+- name: unzip the app2Container
+  unarchive:
+    src: "{{download_a2c_dir}}/AWSApp2Container-installer-linux.tar.gz"
+    dest: "{{download_a2c_dir}}"
+    remote_src: yes
+  when:
+    - app2ContainerResult.rc != 0
+
+- name: install the app2container
+  shell: N|./install.sh accept-eula
+  args:
+    chdir: "{{download_a2c_dir}}"
+  become: yes
+  when:
+    - app2ContainerResult.rc != 0
+
+- name: Remove the temp download directory for a2c installation
+  file:
+    path: "{{ download_a2c_dir }}"
+    state: absent
+    mode: '0755'
+  when:
+    - app2ContainerResult.rc != 0
+

@@ -1,0 +1,322 @@
+- name: Create the app2Container config directory
+  file:
+    path: /{{user}}/.app2container-config/
+    state: directory
+    mode: 0755
+  tags:
+  - init
+
+- name: Initailize the app2Container tool
+  template:
+    src: app2Containerinit.conf.j2
+    dest: /{{user}}/.app2container-config/app2container.conf
+    mode: '0644'
+  tags:
+  - init
+
+- name: Run the Inventory to discover all Java Applications on ApplicationServers
+  shell: app2container inventory
+  register: app2CInventory
+  when:
+    - inventory_hostname in groups['onPremisesApplicationServer']
+  tags:
+    - always
+    - inventory
+
+- debug:
+        msg: "{{ app2CInventory.stdout_lines | join('\n') }}"
+  when:
+    - inventory_hostname in groups['onPremisesApplicationServer']
+  tags:
+    - always
+    - inventory
+
+- set_fact:
+    a2c_inventory: "{{ a2c_inventory + app2CInventory.stdout|from_json|list }}"
+  when:
+    - inventory_hostname in groups['onPremisesApplicationServer']
+  tags:
+    - always
+    - inventory
+
+- set_fact:
+    a2c_inventory: "{{ a2c_inventory |list| select('match', appid)|list  }}"
+  when:
+    - inventory_hostname in groups['onPremisesApplicationServer']
+    - appid is defined
+  tags:
+    - always
+    - inventory
+
+- name: Analyze the application on the Application Server
+  shell: app2container analyze --application-id {{ item }}
+  loop: "{{ a2c_inventory }}"
+  tags:
+  - analyze
+  - containerize
+
+- name: slurp the analysis file from the Application Server
+  slurp:
+    src: "{{ workspace_dir}}/{{ item }}/analysis.json"
+  register: analysisOp
+  loop: "{{ a2c_inventory }}"
+  tags:
+  - analyze
+  - containerize
+
+- name: Load the containerParameters template
+  set_fact:
+    containerParameters: "{{ lookup('template', 'containerParameters.j2') }}"
+  loop: "{{ a2c_inventory }}"
+  tags:
+  - analyze
+  - containerize
+
+- name: Modifify the analysis.json as per parameter
+  set_fact:
+    analysis: "{{ analysis|default([]) + [ analysisOp.results[my_idx].content|b64decode|from_json | default([]) | combine(containerParameters,recursive=True)]}}"
+  loop: "{{ a2c_inventory }}"
+  loop_control:
+    index_var: my_idx
+  tags:
+  - analyze
+  - containerize
+
+- name: write analysis.json
+  copy:
+    content: "{{ analysis[my_idx] | to_nice_json }}"
+    dest: "{{ workspace_dir }}/{{ item }}/analysis.json"
+  loop: "{{ a2c_inventory }}"
+  loop_control:
+    index_var: my_idx
+  tags:
+  - analyze
+  - containerize
+
+- name: Containerize the application on the Application Server Node if worker_mode is false
+  shell: app2container containerize --application-id {{ item }}
+  loop: "{{ a2c_inventory }}"
+  async: 600
+  poll: 30
+  tags:
+  - containerize
+  when:
+    - worker_mode == false
+
+- name: Extract the application on the Application Server if worker_mode is true
+  shell: app2container extract --application-id {{ item }} 
+  async: 600
+  poll: 30
+  loop: "{{ a2c_inventory }}"
+  tags:
+  - extract
+  - containerize
+  when:
+    - worker_mode == true
+
+- name: Create the temp download directory for a2c extracts 
+  file:
+    path: "{{ download_a2c_extracts_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: "localhost"
+  tags:
+   - extract
+   - containerize
+  when:
+    - worker_mode == true
+    - inventory_hostname in groups['onPremisesWorkerServer']
+
+- name: Fetch the file from the application server
+  synchronize: src={{workspace_dir}}/{{ item }}/{{ item }}-extraction.tar dest={{download_a2c_extracts_dir}}  mode=pull
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "localhost"
+  delegate_facts: true 
+  when:
+    - worker_mode == true
+  tags:
+   - containerize
+
+- set_fact:
+    a2c_inventory_worker: "{{ a2c_inventory_worker|default([]) + hostvars[item]['a2c_inventory'] }}"
+  with_items: "{{ groups['onPremisesApplicationServer']}}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] }}"
+  delegate_facts: true
+  when:
+    - worker_mode == true
+  tags:
+    - always
+
+
+- name: copy file to worker 
+  synchronize: src="{{download_a2c_extracts_dir}}/{{ item }}-extraction.tar" dest={{download_a2c_extracts_dir}} mode=push
+  delegate_to: "localhost"
+  when:
+    - worker_mode == true
+    - inventory_hostname in groups['onPremisesWorkerServer'][0] 
+  loop: "{{ a2c_inventory_worker }}"
+  tags:
+   - containerize
+
+- name: Containerize the application on the Worker Node if worker_mode is true
+  shell: app2container containerize --input-archive {{download_a2c_extracts_dir}}/{{item}}-extraction.tar
+  loop: "{{ a2c_inventory }}"
+  async: 600
+  poll: 30
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] }}"
+  tags:
+  - containerize
+  when:
+    - worker_mode == true
+
+- name: Clean the temp download directory for a2c extracts
+  file:
+    path: "{{ download_a2c_extracts_dir }}"
+    state: absent
+    mode: '0755'
+  tags:
+   - extract
+   - containerize
+  when:
+    - worker_mode == true
+    - inventory_hostname in groups['onPremisesWorkerServer']
+
+- name: Execute the editDeployment script
+  script:
+    cmd: editDeployment.py {{ deployTarget }}
+    remote_src: yes
+  args:
+    chdir: "{{workspace_dir}}/{{ item }}/"
+    executable: python
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ansible_ssh_user}}"
+  tags:
+  - gen_deploy
+
+- name: Generate the app Deployment CloudFormation Template
+  shell: app2container generate app-deployment --application-id {{ item }}
+  loop: "{{ a2c_inventory }}"
+  async: 600
+  poll: 30
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_deploy
+
+- name: Deploy the ECS stack
+  shell: aws cloudformation deploy --template-file {{workspace_dir}}/{{item}}/EcsDeployment/ecs-master.yml --capabilities CAPABILITY_NAMED_IAM  --stack-name a2c-{{item}}-{{deployTarget}}
+  loop: "{{ a2c_inventory }}"
+  async: 3600
+  poll: 60
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_deploy
+  when:
+    - deployTarget == "ECS"
+    - deploy == true
+
+
+- name: Deploy the EKS stack
+  shell: aws cloudformation deploy --template-file {{workspace_dir}}/{{item}}/EksDeployment/amazon-eks-entrypoint-new-vpc.yaml --capabilities CAPABILITY_NAMED_IAM CAPABILITY_AUTO_EXPAND --stack-name a2c-{{item}}-{{deployTarget}}
+  loop: "{{ a2c_inventory }}"
+  async: 3600
+  poll: 60
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_deploy
+  when:
+    - deployTarget == "EKS"
+    - deploy == true
+
+
+- name: Extract the ClusterName from the ECS stack
+  shell: aws cloudformation describe-stacks --stack-name a2c-{{item}}-{{deployTarget}} --query "Stacks[0].Outputs[?OutputKey=='ClusterId'].OutputValue" --output text
+  register: ecsClusterName
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deployTarget == "ECS"
+
+- name: Extract the ServiceName from the ECS stack
+  shell: aws cloudformation describe-stacks --stack-name a2c-{{item}}-{{deployTarget}} --query "Stacks[0].Outputs[?OutputKey=='{{deployTarget}}Service'].OutputValue" --output text
+  register: ecsServiceName
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deployTarget == "ECS"
+
+- name: Extract the ClusterName from the EKS stack
+  shell: aws cloudformation describe-stacks --stack-name a2c-{{item}}-{{deployTarget}} --query "Stacks[0].Outputs[?OutputKey=='EKSClusterName'].OutputValue" --output text
+  register: eksClusterName
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deployTarget == "EKS"
+
+- name: Execute the editPipeline script for ECS
+  script:
+    cmd: editPipeline.py {{ deployTarget }} {{ deployEnv }} {{ ecsClusterName.results[my_idx].stdout }} {{ ecsServiceName.results[my_idx].stdout }}
+    remote_src: yes
+  args:
+    chdir: "{{workspace_dir}}/{{ item }}/"
+    executable: python
+  loop: "{{ a2c_inventory }}"
+  loop_control:
+    index_var: my_idx
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deployTarget == "ECS"
+
+- name: Execute the editPipeline script for EKS
+  script:
+    cmd: editPipeline.py {{ deployTarget }} {{ deployEnv }} {{ eksClusterName.results[my_idx].stdout }} " "
+    remote_src: yes
+  args:
+    chdir: "{{workspace_dir}}/{{ item }}/"
+    executable: python
+  loop: "{{ a2c_inventory }}"
+  loop_control:
+    index_var: my_idx
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deployTarget == "EKS"
+
+- name: Generate the app Pipeline CloudFormation Template
+  shell: app2container generate pipeline --application-id {{ item }}
+  async: 600
+  poll: 30
+  loop: "{{ a2c_inventory }}"
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+
+- name: Deploy the pipeline stack
+  shell: aws cloudformation deploy --template-file {{workspace_dir}}/{{item}}/Artifacts/Pipeline/CodePipeline/{{deployTarget|lower}}-pipeline-master.yml --capabilities CAPABILITY_NAMED_IAM --stack-name a2c-{{item}}-{{deployTarget}}-pipeline-stack
+  loop: "{{ a2c_inventory }}"
+  async: 3600
+  poll: 60
+  delegate_to: "{{ groups['onPremisesWorkerServer'][0] if worker_mode == true else omit  }}"
+  remote_user: "{{ ansible_ssh_user }}"
+  tags:
+  - gen_pipeline
+  when:
+    - deploy == true

@@ -1,0 +1,32 @@
+{
+"containerParameters": {
+       "_comment1": "*** EDITABLE: The below section can be edited according to the application requirements. Please see the analysisInfo section below for details discovered regarding the application. ***",
+{% if containerParameters_imageRepository is defined %}
+          "imageRepository": "{{ containerParameters_imageRepository }}",
+{% endif %}
+{% if containerParameters_imageTag is defined %}
+          "imageTag": "{{ containerParameters_imageTag }}",
+{% endif %}
+{% if containerParameters_containerBaseImage is defined %}
+          "containerBaseImage": "{{ containerParameters_containerBaseImage }}",
+{% endif %}
+{% if containerParameters_appExcludedFiles is defined %}
+          "appExcludedFiles": {{ containerParameters_appExcludedFiles }},
+{% endif %}
+{% if containerParameters_appSpecificFiles is defined %}
+          "appSpecificFiles": {{ containerParameters_appSpecificFiles }},
+{% endif %}
+{% if containerParameters_applicationMode is defined %}
+         "applicationMode": {{ containerParameters_applicationMode }},
+{% endif %}
+{% if containerParameters_logLocations is defined %}
+         "logLocations": {{ containerParameters_logLocations }},
+{% endif %}
+{% if containerParameters_enableDynamicLogging is defined %}
+         "enableDynamicLogging": {{ containerParameters_enableDynamicLogging }},
+{% endif %}
+{% if containerParameters_dependencies is defined %}
+         "dependencies": {{ containerParameters_dependencies }}
+{% endif %}
+            }
+}

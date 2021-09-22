@@ -1,0 +1,15 @@
+---
+- name: Run the Prerequisite
+  include: prerequisite.yml
+  tags:
+  - prerequisite
+  any_errors_fatal: true
+
+- name: Run the app2Container Installer
+  include: app2ContainerInstall.yml
+  tags:
+  - install
+  any_errors_fatal: true
+
+- name: Run the app2Container as Worker Mode
+  include: app2containerWorkFlow.yml
