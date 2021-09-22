@@ -1,0 +1,31 @@
+---
+# defaults file for app2Container
+
+#
+user: root
+
+#prerequisite
+free_disk_space_needed: 2000000
+#running mode of the app2Container.
+worker_mode: true
+
+
+#app2Container configuration parameter
+workspace_dir: /{{user}}/container
+awsProfile: default
+#s3Bucket: ""
+checkUpgrade: "false"
+metricsReportPermission: "false"
+enableExperimental: "false"
+dockerContentTrust: "false"
+
+
+#installation directory
+
+download_dir: /tmp/app2container
+download_awscli_dir: /{{download_dir}}/awscli
+download_a2c_dir: /{{download_dir}}/a2c
+download_a2c_extracts_dir: /{{download_dir}}/extracts
+
+awscli_url: https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip
+app2container_url: https://app2container-release-us-east-1.s3.us-east-1.amazonaws.com/latest/linux/AWSApp2Container-installer-linux.tar.gz

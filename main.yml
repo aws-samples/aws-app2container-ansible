@@ -1,0 +1,8 @@
+---
+- hosts: onPremisesApplicationServer:onPremisesWorkerServer
+  gather_facts: false
+  become: yes
+  roles:
+    - role:  app2Container
+  environment:
+    AWS_PROFILE: "{{ awsProfile }}"

@@ -1,0 +1,37 @@
+---
+# vars file for app2Container
+
+#
+user: root
+
+#prerequisite
+free_disk_space_needed: 2000000
+#running mode of the app2Container.
+worker_mode: true
+
+
+#app2Container configuration parameter
+workspace_dir: /{{user}}/container
+awsProfile: default
+checkUpgrade: "false"
+metricsReportPermission: "false"
+enableExperimental: "false"
+dockerContentTrust: "false"
+
+a2c_inventory: []
+
+deployTarget: ECS
+deployEnv: beta
+deploy: true
+
+
+## Container parameter in analysis.json
+#containerParameters_imageRepository: "test"
+#containerParameters_imageTag: "latest"
+#containerParameters_containerBaseImage: "amazonlinux:2"
+#containerParameters_appExcludedFiles: ["/tmp","/var","/root","/opt", "/usr/local","/usr/share","/usr/bin/","/usr/sbin"]
+#containerParameters_appSpecificFiles: ["/usr/lib/jvm/","/usr/bin/java","/etc/alternatives/"]
+#containerParameters_applicationMode: true
+#containerParameters_logLocations: []
+#containerParameters_enableDynamicLogging: false
+#containerParameters_dependencies: []

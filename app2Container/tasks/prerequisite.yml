@@ -1,0 +1,135 @@
+---
+
+- fail: 
+    msg: "Mandatory variables {{ item }} are not set"
+  when: "{{ item }} is not defined"
+  with_items:
+    - s3Bucket
+    - workspace_dir
+    - awsProfile
+
+- name: Ensure root access for the user
+  shell: ls /root
+  register: lsResult
+  ignore_errors: true
+
+- fail:
+    msg: "{{ansible_ssh_user}} does not have permission to /{{user}}."
+  when:
+    - lsResult.rc != 0
+
+- name: Ensure that download directory can be created
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  with_items:
+    - "{{ download_dir }}"
+    - "{{ download_a2c_extracts_dir }}"
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+       worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+   
+- name: Ensure tar is present
+  shell: which tar
+  register: tarResult
+  ignore_errors: true
+
+- name: Install tar if not present
+  package:
+    name: tar
+    state: latest
+  when:
+    - tarResult.rc != 0
+
+- name: "Ensure that the AWS Cli is installed "
+  shell: which aws
+  register: awsResult
+  ignore_errors: true
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+       worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+
+- name: Create the temp download directory for awccli installation
+  file:
+    path: "{{ download_awscli_dir }}"
+    state: directory
+    mode: '0755'
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+      worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+    - awsResult.rc != 0
+
+- name: Download the aws cli tar
+  get_url:
+    url: "{{ awscli_url }}" 
+    dest: "{{download_awscli_dir}}/awscliv2.zip"
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+      worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+    - awsResult.rc != 0
+
+- name: unzip the aws cli
+  unarchive:
+    src: "{{download_awscli_dir}}/awscliv2.zip"
+    dest: "{{download_awscli_dir}}"
+    remote_src: yes
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+      worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+    - awsResult.rc != 0
+
+- name: run the install script
+  shell: ./install
+  args:
+    chdir: "{{download_awscli_dir}}/aws"
+  become: yes
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+      worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+    - awsResult.rc != 0
+  ignore_errors: true
+
+- name: Remove the temp download directory for awscli installation
+  file:
+    path: "{{ download_awscli_dir }}"
+    state: absent
+    mode: '0755'
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+      worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+
+- name: Check if the aws s3 bucket can be queried from the configured profile
+  shell: aws s3 ls {{ s3Bucket }}
+  register: s3LsResult
+  failed_when: s3LsResult.rc != 0
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+       worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+
+
+- name: Ensure Docker is installed on the Worker Machine
+  package:
+    name: docker
+    state: latest
+  become: yes
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+       worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+
+- name: Start the docker service
+  service:
+    name: docker
+    state: restarted
+  when:
+    - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
+       worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
+
+- name: Ensure that disk is at least 10GB sapace available
+  shell : df --output=avail / | tail -1
+  register: freespace
+
+- fail:
+    msg: / does not have the minimum space required to continue (10Gb requested).
+  when:
+    - freespace.stdout|float <= {{ free_disk_space_needed }}
