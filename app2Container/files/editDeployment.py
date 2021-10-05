@@ -20,7 +20,7 @@ elif target == "EKS":
     data['eksParameters']['createEksArtifacts'] = True
     data['ecsParameters']['createEcsArtifacts'] = False
 else:
-    print "Unsupported target"
+    print("Unsupported target")
     sys.exit(1)
 
 with open('deployment.json', 'w') as json_file:
