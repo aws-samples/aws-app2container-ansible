@@ -103,3 +103,11 @@ ansible-playbook -i inventory.ini main.yml -e s3Bucket=<S3 Bucket> -e awsProfile
 To Containerize a specific application id from the list of applications discovered
 
 ansible-playbook -i inventory.ini main.yml -e s3Bucket=<S3 Bucket> -e awsProfile=<awsProfile to use> --appid <>
+
+## Security
+
+ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+
+## License
+
+ This library is licensed under the MIT-0 License. See the LICENSE file.
