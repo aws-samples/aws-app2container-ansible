@@ -26,7 +26,7 @@ elif target == "EKS":
   data['releaseInfo'][target][env]['enabled'] = True
   data['releaseInfo'][target][env]['clusterName'] = clusterName
 else:
-    print "Unsupported target"
+    print("Unsupported target")
     sys.exit(1)
 
 with open('pipeline.json', 'w') as json_file:

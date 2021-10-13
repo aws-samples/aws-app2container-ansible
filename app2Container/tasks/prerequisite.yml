@@ -125,11 +125,11 @@
     - (worker_mode == true and inventory_hostname in groups['onPremisesWorkerServer'] or
        worker_mode == false and inventory_hostname in groups['onPremisesApplicationServer'])
 
-- name: Ensure that disk is at least 10GB sapace available
+- name: Ensure that disk has minimum space available
   shell : df --output=avail / | tail -1
   register: freespace
 
 - fail:
-    msg: / does not have the minimum space required to continue (10Gb requested).
+    msg: / does not have the minimum space required to continue.
   when:
     - freespace.stdout|float <= {{ free_disk_space_needed }}

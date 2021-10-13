@@ -5,7 +5,7 @@
 user: root
 
 #prerequisite
-free_disk_space_needed: 2000000
+free_disk_space_needed: 21474836480
 #running mode of the app2Container.
 worker_mode: true
 
